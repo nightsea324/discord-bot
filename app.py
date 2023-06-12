@@ -164,13 +164,13 @@ async def notification():
         # update
         elif message["status"] == "update" and message["user_login"] in posted_message:
             old_embed = posted_message[message["user_login"]]["embed"]
-            embed = discord.Embed(title=old_embed.title,
-                                  url=old_embed.url,
-                                  description=old_embed.description,
+            embed = discord.Embed(title="{}".format(message["title"]),
+                                  url="https://www.twitch.tv/{}".format(message["user_login"]),
+                                  description="{}".format(message["info"]["description"]),
                                   color=discord.Color.dark_purple())
-            embed.set_author(name=old_embed.author.name,
-                             url=old_embed.author.url,
-                             icon_url=old_embed.author.icon_url)
+            embed.set_author(name="{}".format(message["user_name"]),
+                             url="https://www.twitch.tv/{}".format(message["user_login"]),
+                             icon_url="{}".format(message["info"]["profile_image_url"]))
             embed.set_thumbnail(url=old_embed.thumbnail.url)
             embed.set_footer(text=old_embed.footer.text)
             if check_is_need_refresh(posted_message[message["user_login"]]["updatedAt"]):
