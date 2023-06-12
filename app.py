@@ -1,5 +1,6 @@
 import os
 import datetime
+import pytz
 # discord
 import discord
 from discord.ext import commands
@@ -123,7 +124,12 @@ async def notification():
             embed.set_thumbnail(url="{}".format(message["info"]["profile_image_url"]))
             embed.add_field(name="Game", value="{}".format(message["game_name"]), inline=True)
             embed.add_field(name="Viewers", value="{}".format(message["viewer_count"]), inline=True)
-            embed.set_footer(text="Started streaming：{}" .format(message["started_at"]))
+
+            started_at = (datetime.datetime.strptime(message["started_at"], "%Y-%m-%dT%H:%M:%SZ"))
+            started_at = started_at .replace(tzinfo=pytz.utc).astimezone(
+                pytz.timezone("Asia/Taipei")
+            ).strftime("%Y-%m-%d %H:%M")
+            embed.set_footer(text="Started streaming：{}" .format(started_at))
             # message
             message_text = "**{}** 開台啦".format(message["user_name"])
 
