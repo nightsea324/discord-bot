@@ -69,6 +69,18 @@ def get_stream(users):
     return {entry["user_login"]: entry for entry in response.json()["data"]}
 
 
+def get_games_img_url(game_name):
+    params = {
+        "name": game_name
+    }
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": "Bearer {}".format(ACCESS_TOKEN)
+    }
+    response = requests.get("https://api.twitch.tv/helix/games", params=params, headers=headers)
+    return response.json()["data"][0]["box_art_url"].format(width=1024, height=1024)
+
+
 online_users = {}
 
 
@@ -112,6 +124,7 @@ async def notification():
     notification = get_notification()
     for message in notification:
 
+        # create
         if message["status"] == "new" and message["user_login"] not in posted_message:
             # embed
             embed = discord.Embed(title="{}".format(message["title"]),
@@ -121,7 +134,7 @@ async def notification():
             embed.set_author(name="{}".format(message["user_name"]),
                              url="https://www.twitch.tv/{}".format(message["user_login"]),
                              icon_url="{}".format(message["info"]["profile_image_url"]))
-            embed.set_thumbnail(url="{}".format(message["info"]["profile_image_url"]))
+            embed.set_thumbnail(url="{}".format(get_games_img_url(message["game_name"])))
             embed.add_field(name="Game", value="{}".format(message["game_name"]), inline=True)
             embed.add_field(name="Viewers", value="{}".format(message["viewer_count"]), inline=True)
 
@@ -148,22 +161,39 @@ async def notification():
                 "embed": embed
             }
 
+        # update
         elif message["status"] == "update" and message["user_login"] in posted_message:
+            old_embed = posted_message[message["user_login"]]["embed"]
+            embed = discord.Embed(title=old_embed.title,
+                                  url=old_embed.url,
+                                  description=old_embed.description,
+                                  color=discord.Color.dark_purple())
+            embed.set_author(name=old_embed.author.name,
+                             url=old_embed.author.url,
+                             icon_url=old_embed.author.icon_url)
+            embed.set_thumbnail(url=old_embed.thumbnail.url)
+            embed.set_footer(text=old_embed.footer.text)
             if check_is_need_refresh(posted_message[message["user_login"]]["updatedAt"]):
                 posted_message[message["user_login"]]['updatedAt'] = datetime.datetime.now()
                 posted_message[message["user_login"]]["thumbnail_url"] = "{}{}".format(
                     message["thumbnail_url"].format(width=1920, height=1080),
                     "?" + str(datetime.datetime.now().timestamp())
                 )
-            embed = posted_message[message["user_login"]]["embed"]
+                embed.set_thumbnail(url="{}".format(get_games_img_url(message["game_name"])))
+
+            embed.add_field(name="Game", value="{}".format(message["game_name"]), inline=True)
+            embed.add_field(name="Viewers", value="{}".format(message["viewer_count"]), inline=True)
+
             embed.set_image(url="{}".format(
                 posted_message[message["user_login"]]["thumbnail_url"]))
             res = await channel.fetch_message(posted_message[message["user_login"]]["id"])
             await res.edit(embed=embed)
 
+        # delete
         elif message["status"] == "delete" and message["user_login"] in posted_message:
             embed = posted_message[message["user_login"]]["embed"]
             embed.set_image(url="{}".format(message["info"]["offline_image_url"]))
+            embed.remove_field(1)
 
             res = await channel.fetch_message(posted_message[message["user_login"]]["id"])
             await res.edit(embed=embed)
