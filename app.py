@@ -1,4 +1,6 @@
 import os
+import datetime
+import pytz
 # discord
 import discord
 from discord.ext import commands
@@ -20,6 +22,7 @@ DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+LOOPTIME = int(os.getenv("LOOP_TIME"))
 
 
 # twitch
@@ -66,6 +69,18 @@ def get_stream(users):
     return {entry["user_login"]: entry for entry in response.json()["data"]}
 
 
+def get_games_img_url(game_name):
+    params = {
+        "name": game_name
+    }
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": "Bearer {}".format(ACCESS_TOKEN)
+    }
+    response = requests.get("https://api.twitch.tv/helix/games", params=params, headers=headers)
+    return response.json()["data"][0]["box_art_url"].format(width=1024, height=1024)
+
+
 online_users = {}
 
 
@@ -77,10 +92,17 @@ def get_notification():
     for username in TARGET_USERNAME:
         if username not in online_users and username in stream:
             stream[username]["info"] = user_list[username]
+            stream[username]["status"] = "new"
             notification.append(stream[username])
             online_users[username] = True
         elif username in online_users and username not in stream:
+            notification.append({"user_login": username, "status": "delete",
+                                "info": user_list[username]})
             online_users.pop(username)
+        elif username in online_users and username in stream:
+            stream[username]["status"] = "update"
+            stream[username]["info"] = user_list[username]
+            notification.append(stream[username])
 
     return notification
 
@@ -90,8 +112,10 @@ def get_notification():
 async def ping(ctx):
     await ctx.send("pong")
 
+posted_message = {}
 
-@loop(seconds=30)
+
+@loop(seconds=LOOPTIME)
 async def notification():
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if not channel:
@@ -99,21 +123,86 @@ async def notification():
 
     notification = get_notification()
     for message in notification:
-        # embed
-        embed = discord.Embed(title="{}".format(message["title"]),
-                              url="https://www.twitch.tv/{}".format(message["user_login"]),
-                              description="{}".format(message["info"]["description"]),
-                              color=discord.Color.dark_purple())
-        embed.set_author(name="{}".format(message["user_name"]),
-                         url="https://www.twitch.tv/{}".format(message["user_login"]),
-                         icon_url="{}".format(message["info"]["profile_image_url"]))
-        embed.set_thumbnail(url="{}".format(message["info"]["profile_image_url"]))
-        embed.add_field(name="Game", value="{}".format(message["game_name"]), inline=True)
-        embed.add_field(name="Viewers", value="{}".format(message["viewer_count"]), inline=True)
-        embed.set_image(url="{}".format(message["thumbnail_url"].format(width=1920, height=1080)))
-        embed.set_footer(text="Started streaming：{}" .format(message["started_at"]))
 
-        await channel.send("**{}** 開台啦".format(message['user_name']), embed=embed)
+        # create
+        if message["status"] == "new" and message["user_login"] not in posted_message:
+            # embed
+            embed = discord.Embed(title="{}".format(message["title"]),
+                                  url="https://www.twitch.tv/{}".format(message["user_login"]),
+                                  description="{}".format(message["info"]["description"]),
+                                  color=discord.Color.dark_purple())
+            embed.set_author(name="{}".format(message["user_name"]),
+                             url="https://www.twitch.tv/{}".format(message["user_login"]),
+                             icon_url="{}".format(message["info"]["profile_image_url"]))
+            embed.set_thumbnail(url="{}".format(get_games_img_url(message["game_name"])))
+            embed.add_field(name="Game", value="{}".format(message["game_name"]), inline=True)
+            embed.add_field(name="Viewers", value="{}".format(message["viewer_count"]), inline=True)
+
+            started_at = (datetime.datetime.strptime(message["started_at"], "%Y-%m-%dT%H:%M:%SZ"))
+            started_at = started_at .replace(tzinfo=pytz.utc).astimezone(
+                pytz.timezone("Asia/Taipei")
+            ).strftime("%Y-%m-%d %H:%M")
+            embed.set_footer(text="Started streaming：{}" .format(started_at))
+            # message
+            message_text = "**{}** 開台啦".format(message["user_name"])
+
+            thumbnail_url = "{}{}".format(
+                message["thumbnail_url"].format(width=1920, height=1080),
+                "?" + str(datetime.datetime.now().timestamp())
+            )
+            embed.set_image(url="{}".format(thumbnail_url))
+
+            res = await channel.send(message_text, embed=embed)
+
+            posted_message[message["user_login"]] = {
+                "id": res.id,
+                "updatedAt": datetime.datetime.now(),
+                "thumbnail_url": thumbnail_url,
+                "embed": embed
+            }
+
+        # update
+        elif message["status"] == "update" and message["user_login"] in posted_message:
+            old_embed = posted_message[message["user_login"]]["embed"]
+            embed = discord.Embed(title=old_embed.title,
+                                  url=old_embed.url,
+                                  description=old_embed.description,
+                                  color=discord.Color.dark_purple())
+            embed.set_author(name=old_embed.author.name,
+                             url=old_embed.author.url,
+                             icon_url=old_embed.author.icon_url)
+            embed.set_thumbnail(url=old_embed.thumbnail.url)
+            embed.set_footer(text=old_embed.footer.text)
+            if check_is_need_refresh(posted_message[message["user_login"]]["updatedAt"]):
+                posted_message[message["user_login"]]['updatedAt'] = datetime.datetime.now()
+                posted_message[message["user_login"]]["thumbnail_url"] = "{}{}".format(
+                    message["thumbnail_url"].format(width=1920, height=1080),
+                    "?" + str(datetime.datetime.now().timestamp())
+                )
+                embed.set_thumbnail(url="{}".format(get_games_img_url(message["game_name"])))
+
+            embed.add_field(name="Game", value="{}".format(message["game_name"]), inline=True)
+            embed.add_field(name="Viewers", value="{}".format(message["viewer_count"]), inline=True)
+
+            embed.set_image(url="{}".format(
+                posted_message[message["user_login"]]["thumbnail_url"]))
+            res = await channel.fetch_message(posted_message[message["user_login"]]["id"])
+            await res.edit(embed=embed)
+
+        # delete
+        elif message["status"] == "delete" and message["user_login"] in posted_message:
+            embed = posted_message[message["user_login"]]["embed"]
+            embed.set_image(url="{}".format(message["info"]["offline_image_url"]))
+            embed.remove_field(1)
+
+            res = await channel.fetch_message(posted_message[message["user_login"]]["id"])
+            await res.edit(embed=embed)
+
+            posted_message[message["user_login"]] = None
+
+
+def check_is_need_refresh(datetime_):
+    return datetime_ + datetime.timedelta(minutes=5) < datetime.datetime.now()
 
 
 @ bot.event
