@@ -98,7 +98,7 @@ def get_notification():
         elif username in online_users and username not in stream:
             notification.append({"user_login": username, "status": "delete",
                                 "info": user_list[username]})
-            online_users.pop(username)
+            online_users[username] = None
         elif username in online_users and username in stream:
             stream[username]["status"] = "update"
             stream[username]["info"] = user_list[username]
