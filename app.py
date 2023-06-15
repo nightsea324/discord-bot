@@ -98,7 +98,7 @@ def get_notification():
         elif username in online_users and username not in stream:
             notification.append({"user_login": username, "status": "delete",
                                 "info": user_list[username]})
-            online_users[username] = None
+            online_users.pop(username)
         elif username in online_users and username in stream:
             stream[username]["status"] = "update"
             stream[username]["info"] = user_list[username]
@@ -198,7 +198,7 @@ async def notification():
             res = await channel.fetch_message(posted_message[message["user_login"]]["id"])
             await res.edit(embed=embed)
 
-            posted_message[message["user_login"]] = None
+            posted_message.pop(message["user_login"])
 
 
 def check_is_need_refresh(datetime_):
